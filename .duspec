@@ -1,0 +1,33 @@
+{
+  "id":"deltics.autoupdate",
+  "version":"",
+  "summary":"A framework for providing an auto-update mechanism in software.",
+  "tags":[
+    "deltics",
+    "delphi"
+  ],
+  "compiler":{
+      "language":"pascal",
+      "product":"delphi",
+      "versions":"[7 .. 10.4], !8"
+    },
+  "copyright":"\u00a92020 Jolyon Direnko-Smith",
+  "language":"en",
+  "content":"source",
+  "dependencies":[
+    "deltics.inc:1.3.0",
+    "deltics.interfacedobjects:1.3.1",
+    "deltics.io.filesearch:2.0.2",
+    "deltics.io.path:1.0.0",
+    "deltics.semver:1.0.1",
+    "deltics.stringlists:2.0.0",
+    "deltics.strings:2.1.0",
+    "deltics.versioninfo:1.0.0-beta.1"
+  ],
+  "source":{
+      "files":[
+        "src\\deltics.autoupdate.inc",
+        "src\\Deltics.AutoUpdate.pas"
+      ]
+    }
+}
