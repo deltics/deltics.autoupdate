@@ -149,17 +149,17 @@ implementation
   function TAutoUpdate.Download(const aVersion: String): Boolean;
   var
     filename: String;
-    src: UnicodeString;
-    dest: UnicodeString;
+    src: String;
+    dest: String;
   begin
     filename := ChangeFileExt(Path.Leaf(ParamStr(0)), '-' + aVersion + '.exe');
 
-    src   := Wide.FromString(Path.Append(Source, filename));
-    dest  := Wide.FromString(Path.Append(Path.Branch(ParamStr(0)), filename));
+    src   := Path.Append(Source, filename);
+    dest  := Path.Append(Path.Branch(ParamStr(0)), filename);
 
-    WriteLn(Str.FromWide('Copying ' + src + ' to ' + dest + ' ...'));
+    WriteLn('Copying ' + src + ' to ' + dest + ' ...');
 
-    result := CopyFile(PWideChar(src), PWideChar(dest), TRUE);
+    result := CopyFile(PChar(src), PChar(dest), TRUE);
   end;
 
 
