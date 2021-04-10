@@ -126,10 +126,11 @@ implementation
       EXIT;
     end;
 
-    WriteLn(info.FileDescription + ' ' + info.FileVersion);
+    WriteLn(info.FileDescription + ' ' + info.ProductVersion);
+    WriteLn('Build ' + info.FileVersion);
     WriteLn('Checking for update...');
 
-    currentVer := TSemVer.Create(info.FileVersion);
+    currentVer := TSemVer.Create(info.ProductVersion);
 
     // If there is no update available then there is no further work to do and we
     //  return to the original caller
