@@ -7,6 +7,7 @@
 interface
 
   uses
+    SysUtils,
     Deltics.InterfacedObjects,
     Deltics.SemVer;
 
@@ -42,11 +43,16 @@ interface
     end;
 
 
+  type
+    EAutoUpdatePhaseComplete =  class(EAbort)
+      constructor Create;
+    end;
+
+
 
 implementation
 
   uses
-    SysUtils,
     TlHelp32,
     Windows,
     Deltics.IO.FileSearch,
@@ -247,7 +253,9 @@ implementation
 
     WriteLn('Restarting');
     WinExec(PAnsiChar(cmd), SW_HIDE);
-    Halt(0);
+    WriteLn;
+
+    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
@@ -281,7 +289,8 @@ implementation
                                        params], ' '));
 
     WinExec(PAnsiChar(cmd), SW_HIDE);
-    Halt(0);
+
+    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
@@ -345,5 +354,12 @@ implementation
   end;
 
 
+
+{ EAutoUpdatePhaseComplete }
+
+  constructor EAutoUpdatePhaseComplete.Create;
+  begin
+    inherited Create('AutoUpdate phase complete');
+  end;
 
 end.
