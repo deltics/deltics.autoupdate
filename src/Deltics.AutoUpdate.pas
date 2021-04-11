@@ -103,6 +103,7 @@ implementation
 
   procedure TAutoUpdate.CheckForUpdate(const aForceLatest: Boolean);
   var
+    i: Integer;
     currentVer: ISemVer;
     info: IVersionInfo;
     newVersion: String;
@@ -135,7 +136,7 @@ implementation
     begin
       if Str.SameText(ParamStr(i), '--autoUpdate:version') then
       begin
-        UseVersion(ParamStr(i + 1);
+        UseVersion(ParamStr(i + 1));
         EXIT;
       end;
     end;
@@ -181,10 +182,6 @@ implementation
 
 
   function TAutoUpdate.get_IsUpdating: Boolean;
-  var
-    s: String;
-    i: Integer;
-    cmd: AnsiString;
   begin
 //    if ParamStr(ParamCount - 1) = OPT_Apply then
 //    begin
