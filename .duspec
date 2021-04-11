@@ -22,7 +22,7 @@
     "deltics.semver:1.0.1",
     "deltics.stringlists:2.0.0",
     "deltics.strings:2.1.0",
-    "deltics.versioninfo:1.0.0-beta.1"
+    "deltics.versioninfo:1.0.0-beta.3"
   ],
   "source":{
       "files":[
