@@ -16,7 +16,7 @@ interface
     ['{0D220A22-795A-4798-B345-A4B55F686252}']
       function get_Source: String;
       procedure set_Source(const aValue: String);
-      procedure CheckForUpdate;
+      procedure CheckForUpdate(const aForceLatest: Boolean);
       property Source: String read get_Source write set_Source;
     end;
 
@@ -26,7 +26,7 @@ interface
       function get_Source: String;
       procedure set_Source(const aValue: String);
     public
-      procedure CheckForUpdate;
+      procedure CheckForUpdate(const aForceLatest: Boolean);
 
     private
       fSource: String;
@@ -34,7 +34,7 @@ interface
       procedure ApplyUpdate;
       function Download(const aVersion: String): Boolean;
       procedure Update(const aVersion: String);
-      function UpdateAvailable(const aCurrentVersion: ISemVer; var aVersion: String): Boolean;
+      function UpdateAvailable(const aCurrentVersion: ISemVer; const aForceLatest: Boolean; var aVersion: String): Boolean;
       property IsUpdating: Boolean read get_IsUpdating;
     public
       property Source: String read fSource write fSource;
@@ -100,7 +100,7 @@ implementation
 
 { TAutoUpdate }
 
-  procedure TAutoUpdate.CheckForUpdate;
+  procedure TAutoUpdate.CheckForUpdate(const aForceLatest: Boolean);
   var
     currentVer: ISemVer;
     info: IVersionInfo;
@@ -139,7 +139,7 @@ implementation
     // If there is no update available then there is no further work to do and we
     //  return to the original caller
 
-    if NOT UpdateAvailable(currentVer, newVersion) then
+    if NOT UpdateAvailable(currentVer, aForceLatest, newVersion) then
     begin
       WriteLn(info.LegalCopyright);
       EXIT;
@@ -282,7 +282,9 @@ implementation
 
 
 
-  function TAutoUpdate.UpdateAvailable(const aCurrentVersion: ISemVer; var aVersion: String): Boolean;
+  function TAutoUpdate.UpdateAvailable(const aCurrentVersion: ISemVer;
+                                       const aForceLatest: Boolean;
+                                       var aVersion: String): Boolean;
   var
     i: Integer;
     filenameStem: String;
@@ -312,7 +314,7 @@ implementation
         latest := ver;
     end;
 
-    result := Assigned(latest) and latest.IsNewerThan(aCurrentVersion);
+    result := Assigned(latest) and (aForceLatest or latest.IsNewerThan(aCurrentVersion));
 
     if result then
       aVersion := latest.AsString;
