@@ -113,37 +113,47 @@ implementation
     if IsUpdating then
       ApplyUpdate;
 
+    info := TVersionInfo.Create;
+    if NOT info.HasInfo then
+    begin
+      WriteLn('AutoUpdate not possible: Version info not available');
+      EXIT;
+    end;
+
+    WriteLn(info.FileDescription + ' ' + info.FileVersion);
+    WriteLn('Version ' + info.ProductVersion + ', build ' + info.FileVersionNo);
+
     // If we were relaunched following the application of an update then there is no need
     //  to check for further updates - we can assume we are up-to-date
 
     if ParamStr(ParamCount) = OPT_Relaunch then
-      EXIT;
-
-    info := TVersionInfo.Create;
-    if NOT info.HasInfo then
     begin
-      WriteLn('AutoUpdate Error: Version info not available');
+      WriteLn(info.LegalCopyright);
       EXIT;
     end;
 
-    WriteLn(info.FileDescription + ' ' + info.ProductVersion);
-    WriteLn('Build ' + info.FileVersion);
     WriteLn('Checking for update...');
 
-    currentVer := TSemVer.Create(info.ProductVersion);
+    currentVer := TSemVer.Create(info.FileVersion);
 
     // If there is no update available then there is no further work to do and we
     //  return to the original caller
 
     if NOT UpdateAvailable(currentVer, newVersion) then
+    begin
+      WriteLn(info.LegalCopyright);
       EXIT;
+    end;
 
     WriteLn('Update available (Version ' + newVersion + ')');
     WriteLn('Downloading version ' + newVersion + ' ...');
     if Download(newVersion) then
       Update(newVersion)
     else
+    begin
       WriteLn('DOWNLOAD FAILED! (Update not applied)');
+      WriteLn(info.LegalCopyright);
+    end;
   end;
 
 
