@@ -35,6 +35,7 @@ interface
       function Download(const aVersion: String): Boolean;
       procedure Update(const aVersion: String);
       function UpdateAvailable(const aCurrentVersion: ISemVer; const aForceLatest: Boolean; var aVersion: String): Boolean;
+      procedure UseVersion(const aVersion: String);
       property IsUpdating: Boolean read get_IsUpdating;
     public
       property Source: String read fSource write fSource;
@@ -122,14 +123,21 @@ implementation
 
     WriteLn(info.FileDescription + ' ' + info.FileVersion);
     WriteLn('Version ' + info.ProductVersion + ', build ' + info.FileVersionNo);
+    WriteLn(info.LegalCopyright);
 
     // If we were relaunched following the application of an update then there is no need
     //  to check for further updates - we can assume we are up-to-date
 
     if ParamStr(ParamCount) = OPT_Relaunch then
-    begin
-      WriteLn(info.LegalCopyright);
       EXIT;
+
+    for i := 1 to ParamCount - 1 do
+    begin
+      if Str.SameText(ParamStr(i), '--autoUpdate:version') then
+      begin
+        UseVersion(ParamStr(i + 1);
+        EXIT;
+      end;
     end;
 
     WriteLn('Checking for update...');
@@ -140,20 +148,17 @@ implementation
     //  return to the original caller
 
     if NOT UpdateAvailable(currentVer, aForceLatest, newVersion) then
-    begin
-      WriteLn(info.LegalCopyright);
       EXIT;
-    end;
 
     WriteLn('Update available (Version ' + newVersion + ')');
     WriteLn('Downloading version ' + newVersion + ' ...');
-    if Download(newVersion) then
-      Update(newVersion)
-    else
+    if NOT Download(newVersion) then
     begin
       WriteLn('DOWNLOAD FAILED! (Update not applied)');
-      WriteLn(info.LegalCopyright);
+      EXIT;
     end;
+
+    Update(newVersion);
   end;
 
 
@@ -181,19 +186,19 @@ implementation
     i: Integer;
     cmd: AnsiString;
   begin
-    if ParamStr(ParamCount - 1) = OPT_Apply then
-    begin
-      s := ParamStr(ParamCount);
-      DeleteFile(PChar(s));
-
-      cmd := Ansi.FromString(ParamStr(0));
-      for i := 1 to ParamCount - 2 do
-        cmd := Ansi.Append(cmd, Ansi.FromString(ParamStr(i)), ' ');
-
-      WinExec(PAnsiChar(cmd), SW_HIDE);
-      Halt(0);
-    end;
-
+//    if ParamStr(ParamCount - 1) = OPT_Apply then
+//    begin
+//      s := ParamStr(ParamCount);
+//      DeleteFile(PChar(s));
+//
+//      cmd := Ansi.FromString(ParamStr(0));
+//      for i := 1 to ParamCount - 2 do
+//        cmd := Ansi.Append(cmd, Ansi.FromString(ParamStr(i)), ' ');
+//
+//      WinExec(PAnsiChar(cmd), SW_HIDE);
+//      Halt(0);
+//    end;
+//
     result := (ParamStr(1) = OPT_Apply) and (ParamStr(3) = OPT_Params);
   end;
 
@@ -222,6 +227,7 @@ implementation
     old: String;
     cmd: AnsiString;
   begin
+    WriteLn('[applying update]');
     WriteLn('Updating software ...');
 
     target := Path.Append(Path.Branch(ParamStr(0)), ParamStr(2));
@@ -278,6 +284,7 @@ implementation
                                        params], ' '));
 
     WinExec(PAnsiChar(cmd), SW_HIDE);
+    Halt(0);
   end;
 
 
@@ -321,6 +328,24 @@ implementation
   end;
 
 
+
+
+
+  procedure TAutoUpdate.UseVersion(const aVersion: String);
+  var
+    filename: String;
+  begin
+    WriteLn('Updating to version ' + aVersion + ' ...');
+
+    filename := Path.Leaf(ParamStr(0));
+    filename := ChangeFileExt(filename, '-' + aVersion + '.exe');
+
+    if FileExists(Path.Append(Source, filename)) then
+      Update(aVersion);
+
+    WriteLn('Requested version ' + aVersion + ' not found.');
+    WriteLn;
+  end;
 
 
 
