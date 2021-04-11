@@ -103,6 +103,36 @@ implementation
   end;
 
 
+  procedure Exec(const aCommandLine: String);
+  var
+    si: TStartupInfo;
+    pi: TProcessInformation;
+  begin
+    ZeroMemory(@si, sizeof(si));
+    si.cb := sizeof(si);
+    ZeroMemory(@pi, sizeof(pi));
+
+    // Start the child process.
+    if CreateProcess( NIL,   // No module name (use command line)
+                      PChar(aCommandLine),        // Command line
+                      NIL,           // Process handle not inheritable
+                      NIL,           // Thread handle not inheritable
+                      FALSE,          // Set handle inheritance to FALSE
+                      0,              // No creation flags
+                      NIL,           // Use parent's environment block
+                      NIL,           // Use parent's starting directory
+                      si,            // Pointer to STARTUPINFO structure
+                      pi )           // Pointer to PROCESS_INFORMATION structure
+
+    then
+    begin
+      // Close process and thread handles.
+      CloseHandle(pi.hProcess);
+      CloseHandle(pi.hThread);
+    end;
+  end;
+
+
 
 
 
@@ -224,7 +254,7 @@ implementation
     target: String;
     params: String;
     old: String;
-    cmd: AnsiString;
+    cmd: String;
   begin
     WriteLn('[applying update]');
     WriteLn('Updating software ...');
@@ -245,10 +275,10 @@ implementation
     WriteLn('  Deleting old version ...');
     DeleteFile(PChar(old));
 
-    cmd := Ansi.FromString(target + ' ' + params + ' ' + OPT_Relaunch);
+    cmd := target + ' ' + params + ' ' + OPT_Relaunch;
 
     WriteLn('Restarting');
-    WinExec(PAnsiChar(cmd), SW_HIDE);
+    Exec(cmd);
     WriteLn;
 
     raise EAutoUpdatePhaseComplete.Create;
@@ -261,7 +291,7 @@ implementation
     i: Integer;
     params: String;
     filename: String;
-    cmd: AnsiString;
+    cmd: String;
   begin
     // Copy exisitings params (Param(1) thru Params(ParamCount)) to a quoted
     //  string which we can pass on the command line to the autoUpdate phases
@@ -284,13 +314,13 @@ implementation
 
     filename := ChangeFileExt(ExtractFilename(ParamStr(0)), '-' + aVersion + '.exe');
 
-    cmd := Ansi.FromString(Str.Concat([filename,
-                                       OPT_Apply,
-                                       ExtractFilename(ParamStr(0)),
-                                       OPT_Params,
-                                       params], ' '));
+    cmd := Str.Concat([filename,
+                       OPT_Apply,
+                       ExtractFilename(ParamStr(0)),
+                       OPT_Params,
+                       params], ' ');
 
-    WinExec(PAnsiChar(cmd), SW_HIDE);
+    Exec(cmd);
 
     raise EAutoUpdatePhaseComplete.Create;
   end;
