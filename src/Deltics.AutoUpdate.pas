@@ -66,6 +66,7 @@ implementation
     OPT_Apply     = '--autoUpdate:apply';
     OPT_Params    = '--autoUpdate:passThruParams';
     OPT_Relaunch  = '--autoUpdate:relaunch';
+    OPT_Version   = '--autoUpdate:version';
 
 
   function IsRunning(aExe: String): Boolean;
@@ -139,13 +140,8 @@ implementation
       EXIT;
 
     for i := 1 to ParamCount - 1 do
-    begin
-      if Str.SameText(ParamStr(i), '--autoUpdate:version') then
-      begin
+      if Str.SameText(ParamStr(i), OPT_Version) then
         UseVersion(ParamStr(i + 1));
-        EXIT;
-      end;
-    end;
 
     WriteLn('Checking for update...');
 
@@ -273,7 +269,13 @@ implementation
     params := '';
 
     for i := 1 to ParamCount do
+    begin
+      if Str.SameText(ParamStr(i), OPT_Version)
+       or Str.SameText(ParamStr(i - 1), OPT_Version) then
+        CONTINUE;
+
       params := params + ParamStr(i) + ' ';
+    end;
 
     if Length(params) > 1 then
       SetLength(params, Length(params) - 1);
@@ -351,6 +353,8 @@ implementation
 
     WriteLn('Requested version ' + aVersion + ' not found.');
     WriteLn;
+
+    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
@@ -361,5 +365,7 @@ implementation
   begin
     inherited Create('AutoUpdate phase complete');
   end;
+
+
 
 end.
