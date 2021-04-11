@@ -3,7 +3,7 @@
 
 {$debuginfo OFF}
 
-{$ifdef debug_DelticsDelphiFiles}
+{$ifdef debug_DelticsAutoUpdate}
   {$undef InlineMethods}
   {$debuginfo ON}
 {$endif}
