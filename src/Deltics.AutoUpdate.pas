@@ -217,7 +217,7 @@ implementation
 
   function TAutoUpdate.get_IsUpdating: Boolean;
   begin
-    result := (ParamStr(ParamCount - 1) = OPT_Apply);
+    result := (ParamStr(ParamCount) = OPT_Apply);
   end;
 
 
@@ -243,19 +243,13 @@ implementation
     target: String;
     old: String;
   begin
-    target := Path.Append(Path.Branch(ParamStr(0)), ParamStr(ParamCount));
+    target := ExtractFilename(ParamStr(0));
 
     Log.Debug('AutoUpdate: Waiting for {originaProcess} to terminate', [target]);
 
     while IsRunning(target) do;
 
-    old := ChangeFileExt(target, '.exe.old');
-
-    Log.Debug('AutoUpdate: Renaming {target} as {old}', [target, old]);
-    RenameFile(target, old);
-
-    Log.Debug('AutoUpdate: Renaming {updated} as {target}', [ParamStr(0), target]);
-    RenameFile(ParamStr(0), target);
+    old := target + '.old';
 
     Log.Debug('AutoUpdate: Deleting {old}', [old]);
     DeleteFile(PChar(old));
@@ -271,7 +265,7 @@ implementation
     updatedFilename: String;
     cmd: String;
   begin
-    // Copy exisitings params (Param(1) thru Params(ParamCount)) to a quoted
+    // Copy existing params (Param(1) thru Params(ParamCount)) to a quoted
     //  string which we can pass on the command line to the autoUpdate phases
     //  so that they propogate to the eventual relaunch of the updated app
     params := '';
@@ -291,10 +285,15 @@ implementation
     orgFilename     := ExtractFilename(ParamStr(0));
     updatedFilename := ChangeFileExt(orgFilename, '-' + aVersion + '.exe');
 
-    cmd := Str.Concat([updatedFilename,
+    Log.Debug('AutoUpdate: Renaming {target} as {old}', [orgFilename, orgFilename + '.old']);
+    RenameFile(orgFilename, orgFilename + '.old');
+
+    Log.Debug('AutoUpdate: Renaming {updated} as {target}', [updatedFilename, orgFilename]);
+    RenameFile(updatedFilename, orgFilename);
+
+    cmd := Str.Concat([orgFilename,
                        params,
-                       OPT_Apply,
-                       orgFilename], ' ');
+                       OPT_Apply], ' ');
 
     Exec(cmd);
 
