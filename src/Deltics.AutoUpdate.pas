@@ -57,6 +57,7 @@ implementation
     Windows,
     Deltics.IO.FileSearch,
     Deltics.IO.Path,
+    Deltics.Radiata,
     Deltics.StringLists,
     Deltics.Strings,
     Deltics.VersionInfo;
@@ -150,30 +151,31 @@ implementation
     //  spawned the update process.  Instead we report progress on the update process.
 
     if IsUpdating then
+    begin
       ApplyUpdate;
+      EXIT;
+    end;
 
     info := TVersionInfo.Create;
     if NOT info.HasInfo then
     begin
-      WriteLn('AutoUpdate not possible: Version info not available');
+      Log.Warning('AutoUpdate skipped: Version info not available');
       EXIT;
     end;
 
-    WriteLn(info.FileDescription + ' ' + info.FileVersion);
-    WriteLn('Version ' + info.ProductVersion + ', build ' + info.FileVersionNo);
-    WriteLn(info.LegalCopyright);
-
-    // If we were relaunched following the application of an update then there is no need
-    //  to check for further updates - we can assume we are up-to-date
-
-    if ParamStr(ParamCount) = OPT_Relaunch then
-      EXIT;
+    // Check for specific version to be applied (if available)
 
     for i := 1 to ParamCount - 1 do
       if Str.SameText(ParamStr(i), OPT_Version) then
+      begin
         UseVersion(ParamStr(i + 1));
+        EXIT;
+      end;
 
-    WriteLn('Checking for update...');
+    // Not applying an update and not attempting to apply a specific version,
+    //  check for availability of updates in the specified source
+
+    Log.Verbose('Checking for update');
 
     currentVer := TSemVer.Create(info.FileVersion);
 
@@ -183,11 +185,12 @@ implementation
     if NOT UpdateAvailable(currentVer, aForceLatest, newVersion) then
       EXIT;
 
-    WriteLn('Update available (Version ' + newVersion + ')');
-    WriteLn('Downloading version ' + newVersion + ' ...');
+    Log.Debug('AutoUpdate: Found update to version {version}', [newVersion]);
+    Log.Debug('AutoUpdate: Downloading version {version]', [newVersion]);
+
     if NOT Download(newVersion) then
     begin
-      WriteLn('DOWNLOAD FAILED! (Update not applied)');
+      Log.Error('AutoUpdate: Download of updated version {version} failed', [newVersion]);
       EXIT;
     end;
 
@@ -206,29 +209,15 @@ implementation
     src   := Path.Append(Source, filename);
     dest  := Path.Append(Path.Branch(ParamStr(0)), filename);
 
-    WriteLn('Copying ' + src + ' to ' + dest + ' ...');
+    Log.Debug('AutoUpdate: Copying {src} to {dest}', [src, dest]);
 
     result := CopyFile(PChar(src), PChar(dest), TRUE);
   end;
 
 
-
   function TAutoUpdate.get_IsUpdating: Boolean;
   begin
-//    if ParamStr(ParamCount - 1) = OPT_Apply then
-//    begin
-//      s := ParamStr(ParamCount);
-//      DeleteFile(PChar(s));
-//
-//      cmd := Ansi.FromString(ParamStr(0));
-//      for i := 1 to ParamCount - 2 do
-//        cmd := Ansi.Append(cmd, Ansi.FromString(ParamStr(i)), ' ');
-//
-//      WinExec(PAnsiChar(cmd), SW_HIDE);
-//      Halt(0);
-//    end;
-//
-    result := (ParamStr(1) = OPT_Apply) and (ParamStr(3) = OPT_Params);
+    result := (ParamStr(ParamCount - 1) = OPT_Apply);
   end;
 
 
@@ -252,36 +241,24 @@ implementation
   procedure TAutoUpdate.ApplyUpdate;
   var
     target: String;
-    params: String;
     old: String;
-    cmd: String;
   begin
-    WriteLn('[applying update]');
-    WriteLn('Updating software ...');
+    target := Path.Append(Path.Branch(ParamStr(0)), ParamStr(ParamCount));
 
-    target := Path.Append(Path.Branch(ParamStr(0)), ParamStr(2));
-    params := ParamStr(4);
+    Log.Debug('AutoUpdate: Waiting for {originaProcess} to terminate', [target]);
 
     while IsRunning(target) do;
 
     old := ChangeFileExt(target, '.exe.old');
 
-    WriteLn('  Renaming old version ...');
+    Log.Debug('AutoUpdate: Renaming {target} as {old}', [target, old]);
     RenameFile(target, old);
 
-    WriteLn('  Renaming new version ...');
+    Log.Debug('AutoUpdate: Renaming {updated} as {target}', [ParamStr(0), target]);
     RenameFile(ParamStr(0), target);
 
-    WriteLn('  Deleting old version ...');
+    Log.Debug('AutoUpdate: Deleting {old}', [old]);
     DeleteFile(PChar(old));
-
-    cmd := target + ' ' + params + ' ' + OPT_Relaunch;
-
-    WriteLn('Restarting');
-    Exec(cmd);
-    WriteLn;
-
-    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
@@ -290,7 +267,8 @@ implementation
   var
     i: Integer;
     params: String;
-    filename: String;
+    orgFilename: String;
+    updatedFilename: String;
     cmd: String;
   begin
     // Copy exisitings params (Param(1) thru Params(ParamCount)) to a quoted
@@ -310,15 +288,13 @@ implementation
     if Length(params) > 1 then
       SetLength(params, Length(params) - 1);
 
-    params := Str.Enquote(params, '"');
+    orgFilename     := ExtractFilename(ParamStr(0));
+    updatedFilename := ChangeFileExt(orgFilename, '-' + aVersion + '.exe');
 
-    filename := ChangeFileExt(ExtractFilename(ParamStr(0)), '-' + aVersion + '.exe');
-
-    cmd := Str.Concat([filename,
+    cmd := Str.Concat([updatedFilename,
+                       params,
                        OPT_Apply,
-                       ExtractFilename(ParamStr(0)),
-                       OPT_Params,
-                       params], ' ');
+                       orgFilename], ' ');
 
     Exec(cmd);
 
@@ -373,7 +349,7 @@ implementation
   var
     filename: String;
   begin
-    WriteLn('Updating to version ' + aVersion + ' ...');
+    Log.Debug('AutoUpdate: Checking for availability of {version}', [aVersion]);
 
     filename := Path.Leaf(ParamStr(0));
     filename := ChangeFileExt(filename, '-' + aVersion + '.exe');
@@ -381,8 +357,7 @@ implementation
     if FileExists(Path.Append(Source, filename)) then
       Update(aVersion);
 
-    WriteLn('Requested version ' + aVersion + ' not found.');
-    WriteLn;
+    Log.Error('AutoUpdate: Version {version} cannot be found', [aVersion]);
 
     raise EAutoUpdatePhaseComplete.Create;
   end;
