@@ -346,15 +346,10 @@ implementation
 
 
   procedure TAutoUpdate.UseVersion(const aVersion: String);
-  var
-    filename: String;
   begin
     Log.Debug('AutoUpdate: Checking for availability of {version}', [aVersion]);
 
-    filename := Path.Leaf(ParamStr(0));
-    filename := ChangeFileExt(filename, '-' + aVersion + '.exe');
-
-    if FileExists(Path.Append(Source, filename)) then
+    if Download(aVersion) then
       Update(aVersion);
 
     Log.Error('AutoUpdate: Version {version} cannot be found', [aVersion]);
