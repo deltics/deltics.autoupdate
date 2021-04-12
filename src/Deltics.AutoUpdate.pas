@@ -70,10 +70,8 @@ implementation
     OPT_Version   = '--autoUpdate:version';
 
 
-  function IsRunning(aExe: String): Boolean;
+  function IsRunning(aPID: Cardinal): Boolean;
   var
-    exeName: String;
-    processName: String;
     more: BOOL;
     snapshot: THandle;
     proc: TProcessEntry32;
@@ -82,16 +80,11 @@ implementation
 
     snapshot := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     try
-      exeName := UpperCase(aExe);
-
       proc.dwSize := SizeOf(proc);
       more := Process32First(snapshot, proc);
       while Integer(more) <> 0 do
       begin
-        processName := Uppercase(proc.szExeFile);
-
-        result := (exeName = processName)
-               or (exeName = ExtractFileName(processName));
+        result := aPID = proc.th32ProcessID;
         if result then
           BREAK;
 
@@ -240,16 +233,16 @@ implementation
 
   procedure TAutoUpdate.ApplyUpdate;
   var
-    target: String;
+    pid: Cardinal;
     old: String;
   begin
-    target := ExtractFilename(ParamStr(0));
+    pid := StrToInt(ParamStr(ParamCount));
 
-    Log.Debug('AutoUpdate: Waiting for {originaProcess} to terminate', [target]);
+    Log.Debug('AutoUpdate: Waiting for process {pid} to terminate', [pid]);
 
-    while IsRunning(target) do;
+    while IsRunning(pid) do;
 
-    old := target + '.old';
+    old := ParamStr(0) + '.old';
 
     Log.Debug('AutoUpdate: Deleting {old}', [old]);
     DeleteFile(PChar(old));
@@ -293,7 +286,8 @@ implementation
 
     cmd := Str.Concat([orgFilename,
                        params,
-                       OPT_Apply], ' ');
+                       OPT_Apply,
+                       IntToStr(GetCurrentProcessId)], ' ');
 
     Exec(cmd);
 
