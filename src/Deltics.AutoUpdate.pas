@@ -111,8 +111,8 @@ implementation
                       PChar(aCommandLine),        // Command line
                       NIL,           // Process handle not inheritable
                       NIL,           // Thread handle not inheritable
-                      FALSE,          // Set handle inheritance to FALSE
-                      0,              // No creation flags
+                      TRUE,          // Set handle inheritance to FALSE
+                      0,             // No creation flags
                       NIL,           // Use parent's environment block
                       NIL,           // Use parent's starting directory
                       si,            // Pointer to STARTUPINFO structure
@@ -291,7 +291,8 @@ implementation
 
     Exec(cmd);
 
-    raise EAutoUpdatePhaseComplete.Create;
+    Halt(0);
+//    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
@@ -347,7 +348,8 @@ implementation
 
     Log.Error('AutoUpdate: Version {version} cannot be found', [aVersion]);
 
-    raise EAutoUpdatePhaseComplete.Create;
+    Halt(0);
+//    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
