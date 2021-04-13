@@ -65,8 +65,6 @@ implementation
 
   const
     OPT_Apply     = '--autoUpdate:apply';
-    OPT_Params    = '--autoUpdate:passThruParams';
-    OPT_Relaunch  = '--autoUpdate:relaunch';
     OPT_Version   = '--autoUpdate:version';
 
 
@@ -139,10 +137,6 @@ implementation
     info: IVersionInfo;
     newVersion: String;
   begin
-    // If we are applying an update then we don't display the app banner or version etc
-    //  as this was already shown when the original process was launched that then
-    //  spawned the update process.  Instead we report progress on the update process.
-
     if IsUpdating then
     begin
       ApplyUpdate;
@@ -179,7 +173,7 @@ implementation
       EXIT;
 
     Log.Debug('AutoUpdate: Found update to version {version}', [newVersion]);
-    Log.Debug('AutoUpdate: Downloading version {version]', [newVersion]);
+    Log.Debug('AutoUpdate: Downloading version {version}', [newVersion]);
 
     if NOT Download(newVersion) then
     begin
