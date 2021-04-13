@@ -204,7 +204,7 @@ implementation
 
   function TAutoUpdate.get_IsUpdating: Boolean;
   begin
-    result := (ParamStr(ParamCount) = OPT_Apply);
+    result := (ParamStr(ParamCount - 1) = OPT_Apply);
   end;
 
 
@@ -252,6 +252,8 @@ implementation
     updatedFilename: String;
     cmd: String;
   begin
+    Log.Info('Updating to version {version}', [aVersion]);
+
     // Copy existing params (Param(1) thru Params(ParamCount)) to a quoted
     //  string which we can pass on the command line to the autoUpdate phases
     //  so that they propogate to the eventual relaunch of the updated app
