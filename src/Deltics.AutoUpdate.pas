@@ -66,6 +66,7 @@ implementation
   const
     OPT_Apply     = '--autoUpdate:apply';
     OPT_Version   = '--autoUpdate:version';
+    OPT_NoUpdate  = '--autoUpdate:none';
 
 
   function IsRunning(aPID: Cardinal): Boolean;
@@ -95,7 +96,7 @@ implementation
   end;
 
 
-  procedure Exec(const aCommandLine: String);
+  procedure Exec(const aCommandLine: String; const aAndWait: Boolean);
   var
     si: TStartupInfo;
     pi: TProcessInformation;
@@ -118,6 +119,9 @@ implementation
 
     then
     begin
+      if aAndWait then
+        WaitForSingleObject(pi.hProcess, INFINITE);
+
       // Close process and thread handles.
       CloseHandle(pi.hProcess);
       CloseHandle(pi.hThread);
@@ -137,6 +141,9 @@ implementation
     info: IVersionInfo;
     newVersion: String;
   begin
+    if Str.SameText(ParamStr(ParamCount), OPT_NoUpdate) then
+      EXIT;
+
     if IsUpdating then
     begin
       ApplyUpdate;
@@ -249,6 +256,7 @@ implementation
     i: Integer;
     params: String;
     orgFilename: String;
+    old: String;
     updatedFilename: String;
     cmd: String;
   begin
@@ -272,21 +280,23 @@ implementation
       SetLength(params, Length(params) - 1);
 
     orgFilename     := ExtractFilename(ParamStr(0));
+    old             := orgFilename + '.old';
     updatedFilename := ChangeFileExt(orgFilename, '-' + aVersion + '.exe');
 
-    Log.Debug('AutoUpdate: Renaming {target} as {old}', [orgFilename, orgFilename + '.old']);
-    RenameFile(orgFilename, orgFilename + '.old');
+    Log.Debug('AutoUpdate: Renaming {target} as {old}', [orgFilename, old]);
+    RenameFile(orgFilename, old);
 
     Log.Debug('AutoUpdate: Renaming {updated} as {target}', [updatedFilename, orgFilename]);
     RenameFile(updatedFilename, orgFilename);
 
+    Log.Debug('AutoUpdate: Deleting {old}', [old]);
+    DeleteFile(PChar(old));
+
     cmd := Str.Concat([orgFilename,
                        params,
-                       OPT_Apply,
-                       IntToStr(GetCurrentProcessId)], ' ');
+                       OPT_NoUpdate], ' ');
 
-    Exec(cmd);
-
+    Exec(cmd, TRUE);
     Halt(0);
 //    raise EAutoUpdatePhaseComplete.Create;
   end;
