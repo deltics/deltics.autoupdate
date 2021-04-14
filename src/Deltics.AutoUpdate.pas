@@ -281,10 +281,9 @@ implementation
       RenameFile(updatedFilename, orgFilename);
 
       cmd := Str.Concat([orgFilename,
-                         params,
-                         OPT_NoUpdate], ' ');
+                         params], ' ');
 
-      Exec(cmd, TRUE);
+      Exec(Str.Concat([cmd, OPT_NoUpdate], ' '), TRUE);
 
     except
       if FileExists(orgFilename) then
@@ -299,7 +298,11 @@ implementation
       raise;
     end;
 
-    Exec(Str.Concat([cmd, OPT_Cleanup, Str.Enquote(bak)], ' '), FALSE);
+    Exec(Str.Concat([cmd, OPT_Cleanup,
+                     Str.Enquote(bak),
+                     IntToStr(GetCurrentProcessId)], ' '), FALSE);
+
+    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
@@ -355,8 +358,7 @@ implementation
 
     Log.Error('AutoUpdate: Version {version} cannot be found', [aVersion]);
 
-    Halt(0);
-//    raise EAutoUpdatePhaseComplete.Create;
+    raise EAutoUpdatePhaseComplete.Create;
   end;
 
 
