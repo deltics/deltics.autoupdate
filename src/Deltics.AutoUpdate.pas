@@ -31,13 +31,11 @@ interface
 
     private
       fSource: String;
-      function get_IsUpdating: Boolean;
-      procedure ApplyUpdate;
+      procedure Cleanup;
       function Download(const aVersion: String): Boolean;
       procedure Update(const aVersion: String);
       function UpdateAvailable(const aCurrentVersion: ISemVer; const aForceLatest: Boolean; var aVersion: String): Boolean;
       procedure UseVersion(const aVersion: String);
-      property IsUpdating: Boolean read get_IsUpdating;
     public
       property Source: String read fSource write fSource;
     end;
@@ -64,7 +62,7 @@ implementation
 
 
   const
-    OPT_Apply     = '--autoUpdate:apply';
+    OPT_Cleanup   = '--autoUpdate:cleanup';
     OPT_Version   = '--autoUpdate:version';
     OPT_NoUpdate  = '--autoUpdate:none';
 
@@ -144,10 +142,10 @@ implementation
     if Str.SameText(ParamStr(ParamCount), OPT_NoUpdate) then
       EXIT;
 
-    if IsUpdating then
+    if Str.SameText(ParamStr(ParamCount - 2), Opt_Cleanup) then
     begin
-      ApplyUpdate;
-      EXIT;
+      Cleanup;
+      raise EAutoUpdatePhaseComplete.Create;
     end;
 
     info := TVersionInfo.Create;
@@ -192,6 +190,24 @@ implementation
   end;
 
 
+  procedure TAutoUpdate.Cleanup;
+  var
+    pid: Cardinal;
+    bak: String;
+  begin
+    pid := StrToInt(ParamStr(ParamCount));
+
+    Log.Debug('AutoUpdate: Waiting for process {pid} to terminate', [pid]);
+
+    while IsRunning(pid) do;
+
+    bak := Str.Unquote(ParamStr(ParamCount - 1));
+
+    Log.Debug('AutoUpdate: Deleting {bak}', [bak]);
+    DeleteFile(PChar(bak));
+  end;
+
+
   function TAutoUpdate.Download(const aVersion: String): Boolean;
   var
     filename: String;
@@ -206,12 +222,6 @@ implementation
     Log.Debug('AutoUpdate: Copying {src} to {dest}', [src, dest]);
 
     result := CopyFile(PChar(src), PChar(dest), TRUE);
-  end;
-
-
-  function TAutoUpdate.get_IsUpdating: Boolean;
-  begin
-    result := (ParamStr(ParamCount - 1) = OPT_Apply);
   end;
 
 
@@ -232,31 +242,12 @@ implementation
 
 
 
-  procedure TAutoUpdate.ApplyUpdate;
-  var
-    pid: Cardinal;
-    old: String;
-  begin
-    pid := StrToInt(ParamStr(ParamCount));
-
-    Log.Debug('AutoUpdate: Waiting for process {pid} to terminate', [pid]);
-
-    while IsRunning(pid) do;
-
-    old := ParamStr(0) + '.old';
-
-    Log.Debug('AutoUpdate: Deleting {old}', [old]);
-    DeleteFile(PChar(old));
-  end;
-
-
-
   procedure TAutoUpdate.Update(const aVersion: String);
   var
     i: Integer;
     params: String;
     orgFilename: String;
-    old: String;
+    bak: String;
     updatedFilename: String;
     cmd: String;
   begin
@@ -280,25 +271,35 @@ implementation
       SetLength(params, Length(params) - 1);
 
     orgFilename     := ExtractFilename(ParamStr(0));
-    old             := orgFilename + '.old';
+    bak             := orgFilename + '.bak';
     updatedFilename := ChangeFileExt(orgFilename, '-' + aVersion + '.exe');
 
-    Log.Debug('AutoUpdate: Renaming {target} as {old}', [orgFilename, old]);
-    RenameFile(orgFilename, old);
+    Log.Debug('AutoUpdate: Renaming {target} as {old}', [orgFilename, bak]);
+    RenameFile(orgFilename, bak);
+    try
+      Log.Debug('AutoUpdate: Renaming {updated} as {target}', [updatedFilename, orgFilename]);
+      RenameFile(updatedFilename, orgFilename);
 
-    Log.Debug('AutoUpdate: Renaming {updated} as {target}', [updatedFilename, orgFilename]);
-    RenameFile(updatedFilename, orgFilename);
+      cmd := Str.Concat([orgFilename,
+                         params,
+                         OPT_NoUpdate], ' ');
 
-    Log.Debug('AutoUpdate: Deleting {old}', [old]);
-    DeleteFile(PChar(old));
+      Exec(cmd, TRUE);
 
-    cmd := Str.Concat([orgFilename,
-                       params,
-                       OPT_NoUpdate], ' ');
+    except
+      if FileExists(orgFilename) then
+      begin
+        Log.Debug('AutoUpdate: Deleting {target}', [orgFilename]);
+        DeleteFile(PChar(orgFilename));
+      end;
 
-    Exec(cmd, TRUE);
-    Halt(0);
-//    raise EAutoUpdatePhaseComplete.Create;
+      Log.Debug('AutoUpdate: Restoring {bak}', [bak]);
+      RenameFile(bak, orgFilename);
+
+      raise;
+    end;
+
+    Exec(Str.Concat([cmd, OPT_Cleanup, Str.Enquote(bak)], ' '), FALSE);
   end;
 
 
