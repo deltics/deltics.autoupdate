@@ -9,7 +9,7 @@
   "compiler":{
       "language":"pascal",
       "product":"delphi",
-      "versions":"[7..10.4], !8, !2006, !2007"
+      "versions":"[7..10.4], !8, ![2006..2009]"
     },
   "copyright":"\u00a92020 Jolyon Direnko-Smith",
   "language":"en",

@@ -20,5 +20,5 @@ pool:
 jobs:
 - template: build.yml@congress
   parameters:
-    x86Versions: [ 7, 2009, 2010, xe ]
+    x86Versions: [ 7, 2010, xe ]
 
