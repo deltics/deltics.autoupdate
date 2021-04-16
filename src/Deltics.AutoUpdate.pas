@@ -33,8 +33,11 @@ implementation
   uses
     TlHelp32,
     Windows,
+    IdHttp,
     Deltics.IO.FileSearch,
     Deltics.IO.Path,
+    Deltics.IO.Streams,
+    Deltics.Json,
     Deltics.Radiata,
     Deltics.StringLists,
     Deltics.Strings,
@@ -57,6 +60,8 @@ implementation
       fTargetBackup: String;
       fTargetUpdate: String;
       function get_Phase: TAutoUpdatePhase;
+      procedure CheckFileSource(const aCurrentVersion: ISemVer; var aVersion: ISemVer);
+      procedure CheckHttpSource(const aCurrentVersion: ISemVer; var aVersion: ISemVer);
       procedure Cleanup;
       procedure Download(const aVersion: String);
       procedure UpdateAndTerminate;
@@ -117,7 +122,7 @@ implementation
                       PChar(aCommandLine),        // Command line
                       NIL,           // Process handle not inheritable
                       NIL,           // Thread handle not inheritable
-                      TRUE,          // Set handle inheritance to FALSE
+                      FALSE,         // No handle inheritance
                       0,             // No creation flags
                       NIL,           // Use parent's environment block
                       NIL,           // Use parent's starting directory
@@ -265,6 +270,85 @@ implementation
   end;
 
 
+  procedure TAutoUpdate.CheckFileSource(const aCurrentVersion: ISemVer;
+                                        var   aVersion: ISemVer);
+  var
+    i: Integer;
+    filenameStem: String;
+    filename: String;
+    available: IStringList;
+    ver: ISemVer;
+    latest: ISemVer;
+  begin
+    filenameStem := ChangeFileExt(Path.Leaf(Target), '-');
+
+    if NOT FileSearch.Filename(filenameStem + '*.exe')
+            .Folder(Source)
+            .Yielding.Files(available)
+            .Execute then
+      EXIT;
+
+    for i := 0 to Pred(available.Count) do
+    begin
+      filename := ChangeFileExt(available[i], '');
+      Delete(filename, 1, Length(filenameStem));
+
+      ver := TSemVer.Create(filename);
+      if NOT Assigned(latest) or ver.IsNewerThan(latest) then
+        latest := ver;
+    end;
+
+    aVersion := latest;
+  end;
+
+
+  procedure TAutoUpdate.CheckHttpSource(const aCurrentVersion: ISemVer;
+                                        var   aVersion: ISemVer);
+  var
+    i: Integer;
+    http: TIdHttp;
+    url: String;
+    urlBase: String;
+    response: IStream;
+    versions: StringArray;
+    ver: ISemVer;
+    latest: ISemVer;
+  begin
+    http := TIdHttp.Create;
+    try
+      urlBase := Source;
+      if urlBase[Length(urlBase)] <> '/' then
+        urlBase := urlBase + '/';
+
+      url       := urlBase + 'updates?target=' + Path.Leaf(Target)
+                                  + '&currentVersion=' + aCurrentVersion.AsString;
+      response  := TDynamicMemoryStream.Create;
+
+      Log.Debug('AutoUpdate: Request {url}', [url]);
+
+      http.Get(url, response.Stream);
+
+      response.Position := 0;
+
+      versions := (Json.FromStream(response.Stream) as IJsonArray).AsStringArray;
+
+      Log.Debug('AutoUpdate: Found {n} versions', [High(versions)]);
+
+      for i := 0 to High(versions) do
+      begin
+        ver := TSemVer.Create(versions[i]);
+        if NOT Assigned(latest) or ver.IsNewerThan(latest) then
+          latest := ver;
+      end;
+
+      aVersion := latest;
+
+    finally
+      http.Free;
+    end;
+  end;
+
+
   procedure TAutoUpdate.Cleanup;
   var
     pid: Cardinal;
@@ -395,10 +479,6 @@ implementation
                                        var aVersion: String): Boolean;
   var
     i: Integer;
-    filenameStem: String;
-    filename: String;
-    available: IStringList;
-    ver: ISemVer;
     latest: ISemVer;
     forceUpdate: Boolean;
   begin
@@ -411,26 +491,14 @@ implementation
         BREAK;
     end;
 
-    result    := FALSE;
-    aVersion  := '';
+    aVersion := '';
 
-    filenameStem := ChangeFileExt(ExtractFilename(ParamStr(0)), '-');
+    Log.Debug('AutoUpdate: Checking {source} for updates', [Source]);
 
-    if NOT FileSearch.Filename(filenameStem + '*.exe')
-            .Folder(Source)
-            .Yielding.Files(available)
-            .Execute then
-      EXIT;
-
-    for i := 0 to Pred(available.Count) do
-    begin
-      filename := ChangeFileExt(available[i], '');
-      Delete(filename, 1, Length(filenameStem));
-
-      ver := TSemVer.Create(filename);
-      if NOT Assigned(latest) or ver.IsNewerThan(latest) then
-        latest := ver;
-    end;
+    if Str.BeginsWithText(Source, 'http://') or Str.BeginsWithText(Source, 'https://') then
+      CheckHttpSource(aCurrentVersion, latest)
+    else
+      CheckFileSource(aCurrentVersion, latest);
 
     result := Assigned(latest) and (forceUpdate or latest.IsNewerThan(aCurrentVersion));
 
