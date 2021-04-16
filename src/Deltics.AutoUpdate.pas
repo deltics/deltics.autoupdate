@@ -33,9 +33,9 @@ interface
       fSource: String;
       procedure Cleanup;
       function Download(const aVersion: String): Boolean;
-      procedure Update(const aVersion: String);
+      procedure UpdateAndTerminate(const aVersion: String);
       function UpdateAvailable(const aCurrentVersion: ISemVer; const aForceLatest: Boolean; var aVersion: String): Boolean;
-      procedure UseVersion(const aVersion: String);
+      procedure UpdateToVersionAndTerminate(const aVersion: String);
     public
       property Source: String read fSource write fSource;
     end;
@@ -44,6 +44,11 @@ interface
   type
     EAutoUpdatePhaseComplete =  class(EAbort)
       constructor Create;
+    end;
+
+
+    AutoUpdate = class
+      class procedure CheckSource(const aSource: String; const aForceLatest: Boolean);
     end;
 
 
@@ -142,10 +147,14 @@ implementation
     if Str.SameText(ParamStr(ParamCount), OPT_NoUpdate) then
       EXIT;
 
-    if Str.SameText(ParamStr(ParamCount - 2), Opt_Cleanup) then
+    // If we're running the claenup phase of an autoupdate then we perform
+    //  the cleanup and exit so that normal processing then continues
+    //  (no further update on this execution).
+
+    if Str.SameText(ParamStr(ParamCount - 1), Opt_Cleanup) then
     begin
       Cleanup;
-      raise EAutoUpdatePhaseComplete.Create;
+      EXIT;
     end;
 
     info := TVersionInfo.Create;
@@ -160,7 +169,7 @@ implementation
     for i := 1 to ParamCount - 1 do
       if Str.SameText(ParamStr(i), OPT_Version) then
       begin
-        UseVersion(ParamStr(i + 1));
+        UpdateToVersionAndTerminate(ParamStr(i + 1));
         EXIT;
       end;
 
@@ -186,7 +195,7 @@ implementation
       EXIT;
     end;
 
-    Update(newVersion);
+    UpdateAndTerminate(newVersion);
   end;
 
 
@@ -201,7 +210,7 @@ implementation
 
     while IsRunning(pid) do;
 
-    bak := Str.Unquote(ParamStr(ParamCount - 1));
+    bak := ExtractFilename(ParamStr(0)) + '.bak';
 
     Log.Debug('AutoUpdate: Deleting {bak}', [bak]);
     DeleteFile(PChar(bak));
@@ -242,20 +251,22 @@ implementation
 
 
 
-  procedure TAutoUpdate.Update(const aVersion: String);
+  procedure TAutoUpdate.UpdateAndTerminate(const aVersion: String);
   var
     i: Integer;
     params: String;
     orgFilename: String;
     bak: String;
     updatedFilename: String;
-    cmd: String;
   begin
     Log.Info('Updating to version {version}', [aVersion]);
 
     // Copy existing params (Param(1) thru Params(ParamCount)) to a quoted
     //  string which we can pass on the command line to the autoUpdate phases
     //  so that they propogate to the eventual relaunch of the updated app
+    //
+    // NB. Strips out any --autoupdate:version options (and associated value).
+
     params := '';
 
     for i := 1 to ParamCount do
@@ -274,33 +285,13 @@ implementation
     bak             := orgFilename + '.bak';
     updatedFilename := ChangeFileExt(orgFilename, '-' + aVersion + '.exe');
 
-    Log.Debug('AutoUpdate: Renaming {target} as {old}', [orgFilename, bak]);
+    Log.Debug('AutoUpdate: Renaming {target} as {bak}', [orgFilename, bak]);
     RenameFile(orgFilename, bak);
-    try
-      Log.Debug('AutoUpdate: Renaming {updated} as {target}', [updatedFilename, orgFilename]);
-      RenameFile(updatedFilename, orgFilename);
 
-      cmd := Str.Concat([orgFilename,
-                         params], ' ');
+    Log.Debug('AutoUpdate: Renaming {updated} as {target}', [updatedFilename, orgFilename]);
+    RenameFile(updatedFilename, orgFilename);
 
-      Exec(Str.Concat([cmd, OPT_NoUpdate], ' '), TRUE);
-
-    except
-      if FileExists(orgFilename) then
-      begin
-        Log.Debug('AutoUpdate: Deleting {target}', [orgFilename]);
-        DeleteFile(PChar(orgFilename));
-      end;
-
-      Log.Debug('AutoUpdate: Restoring {bak}', [bak]);
-      RenameFile(bak, orgFilename);
-
-      raise;
-    end;
-
-    Exec(Str.Concat([cmd, OPT_Cleanup,
-                     Str.Enquote(bak),
-                     IntToStr(GetCurrentProcessId)], ' '), FALSE);
+    Exec(Str.Concat([orgFilename, params, OPT_Cleanup, IntToStr(GetCurrentProcessId)], ' '), FALSE);
 
     raise EAutoUpdatePhaseComplete.Create;
   end;
@@ -349,12 +340,12 @@ implementation
 
 
 
-  procedure TAutoUpdate.UseVersion(const aVersion: String);
+  procedure TAutoUpdate.UpdateToVersionAndTerminate(const aVersion: String);
   begin
     Log.Debug('AutoUpdate: Checking for availability of {version}', [aVersion]);
 
     if Download(aVersion) then
-      Update(aVersion);
+      UpdateAndTerminate(aVersion);
 
     Log.Error('AutoUpdate: Version {version} cannot be found', [aVersion]);
 
@@ -368,6 +359,20 @@ implementation
   constructor EAutoUpdatePhaseComplete.Create;
   begin
     inherited Create('AutoUpdate phase complete');
+  end;
+
+
+
+{ AutoUpdate }
+
+  class procedure AutoUpdate.CheckSource(const aSource: String;
+                                         const aForceLatest: Boolean);
+  var
+    updater: IAutoUpdate;
+  begin
+    updater := TAutoUpdate.Create;
+    updater.Source := aSource;
+    updater.CheckForUpdate(aForceLatest);
   end;
 
 
