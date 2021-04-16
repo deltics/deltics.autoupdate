@@ -310,7 +310,7 @@ implementation
     url: String;
     urlBase: String;
     response: IStream;
-    versions: StringArray;
+    versions: UnicodeStringArray;
     ver: ISemVer;
     latest: ISemVer;
   begin
@@ -336,7 +336,7 @@ implementation
 
       for i := 0 to High(versions) do
       begin
-        ver := TSemVer.Create(versions[i]);
+        ver := TSemVer.Create(Str.FromWide(versions[i]));
         if NOT Assigned(latest) or ver.IsNewerThan(latest) then
           latest := ver;
       end;
