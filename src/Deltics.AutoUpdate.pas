@@ -341,7 +341,6 @@ implementation
   var
     i: Integer;
     params: String;
-    orgFilename: String;
     cmd: String;
   begin
     if NOT FileExists(TargetUpdate) then
@@ -382,7 +381,7 @@ implementation
     if Length(params) > 1 then
       SetLength(params, Length(params) - 1);
 
-    cmd := Str.Concat([orgFilename, params, OPT_Cleanup, IntToStr(GetCurrentProcessId)], ' ');
+    cmd := Str.Concat([Target, params, OPT_Cleanup, IntToStr(GetCurrentProcessId)], ' ');
 
     Log.Debug('AutoUpdate: Relaunching updated application with command line {cmd}', [cmd]);
     Exec(cmd, FALSE);
