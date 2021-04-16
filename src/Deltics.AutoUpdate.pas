@@ -288,6 +288,8 @@ implementation
             .Execute then
       EXIT;
 
+    Log.Debug('AutoUpdate: Found {n} versions', [available.Count]);
+
     for i := 0 to Pred(available.Count) do
     begin
       filename := ChangeFileExt(available[i], '');
@@ -314,6 +316,8 @@ implementation
     ver: ISemVer;
     latest: ISemVer;
   begin
+    latest := NIL;
+
     http := TIdHttp.Create;
     try
       urlBase := Source;
@@ -326,11 +330,20 @@ implementation
 
       Log.Debug('AutoUpdate: Request {url}', [url]);
 
-      http.Get(url, response.Stream);
+      try
+        http.Get(url, response.Stream);
 
-      response.Position := 0;
+        response.Position := 0;
 
-      versions := (Json.FromStream(response.Stream) as IJsonArray).AsStringArray;
+        versions := (Json.FromStream(response.Stream) as IJsonArray).AsStringArray;
+
+      except
+        on e: Exception do
+        begin
+          Log.Error('AutoUpdate: ' + e.Message);
+          SetLength(versions, 0);
+        end;
+      end;
 
       Log.Debug('AutoUpdate: Found {n} versions', [High(versions)]);
 
