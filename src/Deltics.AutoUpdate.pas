@@ -23,7 +23,7 @@ interface
 
 
     AutoUpdate = class
-      class procedure CheckSource(const aSource: String; const aForceLatest: Boolean);
+      class procedure CheckSource(const aSource: String);
     end;
 
 
@@ -475,8 +475,7 @@ implementation
 
 { AutoUpdate }
 
-  class procedure AutoUpdate.CheckSource(const aSource: String;
-                                         const aForceLatest: Boolean);
+  class procedure AutoUpdate.CheckSource(const aSource: String);
   var
     updater: TAutoUpdate;
   begin
