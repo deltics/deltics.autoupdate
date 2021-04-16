@@ -13,35 +13,10 @@ interface
 
 
   type
-    IAutoUpdate = interface
-    ['{0D220A22-795A-4798-B345-A4B55F686252}']
-      function get_Source: String;
-      procedure set_Source(const aValue: String);
-      procedure CheckForUpdate(const aForceLatest: Boolean);
-      property Source: String read get_Source write set_Source;
-    end;
+    TAutoUpdatePhase = (auNone, auInitAuto, auInitVersion, auCleanup);
 
 
-    TAutoUpdate = class(TComInterfacedObject, IAutoUpdate)
-    protected // IAutoUpdate
-      function get_Source: String;
-      procedure set_Source(const aValue: String);
-    public
-      procedure CheckForUpdate(const aForceLatest: Boolean);
-
-    private
-      fSource: String;
-      procedure Cleanup;
-      function Download(const aVersion: String): Boolean;
-      procedure UpdateAndTerminate(const aVersion: String);
-      function UpdateAvailable(const aCurrentVersion: ISemVer; const aForceLatest: Boolean; var aVersion: String): Boolean;
-      procedure UpdateToVersionAndTerminate(const aVersion: String);
-    public
-      property Source: String read fSource write fSource;
-    end;
-
-
-  type
+    EAutoUpdateError =  class(Exception);
     EAutoUpdatePhaseComplete =  class(EAbort)
       constructor Create;
     end;
@@ -68,8 +43,37 @@ implementation
 
   const
     OPT_Cleanup   = '--autoUpdate:cleanup';
-    OPT_Version   = '--autoUpdate:version';
+    OPT_Force     = '--autoUpdate:force';
     OPT_NoUpdate  = '--autoUpdate:none';
+    OPT_Version   = '--autoUpdate:version';
+
+
+
+  type
+    TAutoUpdate = class
+    private
+      fSource: String;
+      fTarget: String;
+      fTargetBackup: String;
+      fTargetUpdate: String;
+      function get_Phase: TAutoUpdatePhase;
+      procedure Cleanup;
+      procedure Download(const aVersion: String);
+      procedure UpdateAndTerminate;
+      function UpdateAvailable(const aCurrentVersion: ISemVer; var aVersion: String): Boolean;
+      procedure UpdateToVersionAndTerminate(const aVersion: String);
+    public
+      procedure AfterConstruction; override;
+      procedure Execute;
+      property Phase: TAutoUpdatePhase read get_Phase;
+      property Target: String read fTarget;
+      property TargetBackup: String read fTargetBackup;
+      property TargetUpdate: String read fTargetUpdate;
+      property Source: String read fSource write fSource;
+    end;
+
+
+
 
 
   function IsRunning(aPID: Cardinal): Boolean;
@@ -132,134 +136,231 @@ implementation
   end;
 
 
+  procedure WaitForFile(const aFilename: String);
+  var
+    iter: Integer;
+  begin
+    iter := 0;
+    while (iter < 10) and (NOT FileExists(aFilename)) do
+    begin
+      Inc(iter);
+      Sleep(100);
+    end;
+
+    if NOT FileExists(aFilename) then
+      raise EAutoUpdateError.CreateFmt('Required file ''%s'' does not exist', [aFilename]);
+  end;
+
+
+  procedure WaitForNoFile(const aFilename: String);
+  var
+    iter: Integer;
+  begin
+    iter := 0;
+    while (iter < 10) and FileExists(aFilename) do
+    begin
+      Inc(iter);
+      Sleep(100);
+    end;
+
+    if FileExists(aFilename) then
+      raise EAutoUpdateError.CreateFmt('File ''%s'' was not deleted', [aFilename]);
+  end;
+
+
+  procedure CopyFileAndWait(const aSource, aDest: String);
+  begin
+    if CopyFile(PChar(aSource), PChar(aDest), TRUE) then
+      WaitForFile(aDest);
+  end;
+
+
+  procedure DeleteFileAndWait(const aFilename: String);
+  begin
+    if DeleteFile(PChar(aFilename)) then
+      WaitForNoFile(aFilename);
+  end;
+
+
+  procedure RenameFileAndWait(const aOldName, aNewName: String);
+  begin
+    if RenameFile(aOldName, aNewName) then
+    begin
+      WaitForNoFile(aOldName);
+      WaitForFile(aNewName);
+    end;
+  end;
 
 
 
 { TAutoUpdate }
 
-  procedure TAutoUpdate.CheckForUpdate(const aForceLatest: Boolean);
+  procedure TAutoUpdate.Execute;
   var
     i: Integer;
     currentVer: ISemVer;
     info: IVersionInfo;
     newVersion: String;
   begin
-    if Str.SameText(ParamStr(ParamCount), OPT_NoUpdate) then
-      EXIT;
+    case Phase of
+      auNone        : EXIT;
 
-    // If we're running the claenup phase of an autoupdate then we perform
-    //  the cleanup and exit so that normal processing then continues
-    //  (no further update on this execution).
+      auCleanup     : begin
+                        Cleanup;
+                        EXIT;
+                      end;
 
-    if Str.SameText(ParamStr(ParamCount - 1), Opt_Cleanup) then
-    begin
-      Cleanup;
-      EXIT;
-    end;
+      auInitVersion : begin
+                        for i := 1 to ParamCount - 1 do
+                          if Str.SameText(ParamStr(i), OPT_Version) then
+                          begin
+                            UpdateToVersionAndTerminate(ParamStr(i + 1));
+                            EXIT;
+                          end;
+                      end;
 
-    info := TVersionInfo.Create;
-    if NOT info.HasInfo then
-    begin
-      Log.Warning('AutoUpdate skipped: Version info not available');
-      EXIT;
-    end;
+    else // auInitAuto
+      // Not applying an update and not attempting to apply a specific version,
+      //  check for availability of updates in the specified source
 
-    // Check for specific version to be applied (if available)
+      Log.Verbose('Checking for update');
 
-    for i := 1 to ParamCount - 1 do
-      if Str.SameText(ParamStr(i), OPT_Version) then
+      info := TVersionInfo.Create;
+      if NOT info.HasInfo then
       begin
-        UpdateToVersionAndTerminate(ParamStr(i + 1));
+        Log.Warning('AutoUpdate skipped: Version info not available');
         EXIT;
       end;
 
-    // Not applying an update and not attempting to apply a specific version,
-    //  check for availability of updates in the specified source
+      currentVer := TSemVer.Create(info.FileVersion);
 
-    Log.Verbose('Checking for update');
+      // If there is no update available then there is no further work to do and we
+      //  return to the original caller
 
-    currentVer := TSemVer.Create(info.FileVersion);
+      if NOT UpdateAvailable(currentVer, newVersion) then
+        EXIT;
 
-    // If there is no update available then there is no further work to do and we
-    //  return to the original caller
+      Download(newVersion);
 
-    if NOT UpdateAvailable(currentVer, aForceLatest, newVersion) then
-      EXIT;
+      Log.Info('Updating to version {version}', [newVersion]);
 
-    Log.Debug('AutoUpdate: Found update to version {version}', [newVersion]);
-    Log.Debug('AutoUpdate: Downloading version {version}', [newVersion]);
-
-    if NOT Download(newVersion) then
-    begin
-      Log.Error('AutoUpdate: Download of updated version {version} failed', [newVersion]);
-      EXIT;
+      UpdateAndTerminate;
     end;
+  end;
 
-    UpdateAndTerminate(newVersion);
+
+  procedure TAutoUpdate.AfterConstruction;
+  var
+    len: Integer;
+  begin
+    inherited;
+
+    SetLength(fTarget, 2048);
+    len := GetModuleFileName(0, PChar(fTarget), Length(fTarget));
+    if len <> -1 then
+      SetLength(fTarget, len);
+
+    fTargetBackup := fTarget + '.bak';
+    fTargetUpdate := fTarget + '.new';
   end;
 
 
   procedure TAutoUpdate.Cleanup;
   var
     pid: Cardinal;
-    bak: String;
   begin
     pid := StrToInt(ParamStr(ParamCount));
 
     Log.Debug('AutoUpdate: Waiting for process {pid} to terminate', [pid]);
 
-    while IsRunning(pid) do;
+    while IsRunning(pid) do Sleep(10);
 
-    bak := ExtractFilename(ParamStr(0)) + '.bak';
+    Log.Debug('AutoUpdate: Deleting {bak}', [Path.Leaf(TargetBackup)]);
 
-    Log.Debug('AutoUpdate: Deleting {bak}', [bak]);
-    DeleteFile(PChar(bak));
+    DeleteFileAndWait(TargetBackup);
   end;
 
 
-  function TAutoUpdate.Download(const aVersion: String): Boolean;
+  procedure TAutoUpdate.Download(const aVersion: String);
   var
     filename: String;
     src: String;
-    dest: String;
   begin
-    filename := ChangeFileExt(Path.Leaf(ParamStr(0)), '-' + aVersion + '.exe');
+    filename := ChangeFileExt(Path.Leaf(Target), '-' + aVersion + '.exe');
 
-    src   := Path.Append(Source, filename);
-    dest  := Path.Append(Path.Branch(ParamStr(0)), filename);
+    src := Path.Append(Source, filename);
 
-    Log.Debug('AutoUpdate: Copying {src} to {dest}', [src, dest]);
+    if NOT FileExists(src) then
+    begin
+      Log.Error('AutoUpdate: Update file ''{update}'' not found', [src]);
+      EXIT;
+    end;
 
-    result := CopyFile(PChar(src), PChar(dest), TRUE);
+    if FileExists(TargetUpdate) then
+    begin
+      Log.Debug('AutoUpdate: Deleting existing update file {update}', [Path.Leaf(TargetUpdate)]);
+      DeleteFileAndWait(TargetUpdate);
+    end;
+
+    Log.Debug('AutoUpdate: Copying update file {src} to {dest}', [filename, Path.Leaf(TargetUpdate)]);
+
+    CopyFileAndWait(src, TargetUpdate);
   end;
 
 
-  function TAutoUpdate.get_Source: String;
+  function TAutoUpdate.get_Phase: TAutoUpdatePhase;
+  var
+    i: Integer;
   begin
-    result := fSource;
+    if Str.SameText(ParamStr(ParamCount), OPT_NoUpdate) then
+    begin
+      result := auNone;
+      EXIT;
+    end;
+
+    if Str.SameText(ParamStr(ParamCount - 1), Opt_Cleanup) then
+    begin
+      result := auCleanup;
+      EXIT;
+    end;
+
+    for i := 1 to ParamCount - 1 do
+    begin
+      if Str.SameText(ParamStr(i), OPT_Version) then
+      begin
+        result := auInitVersion;
+        EXIT;
+      end;
+    end;
+
+    result := auInitAuto;
   end;
 
 
-  procedure TAutoUpdate.set_Source(const aValue: String);
-  begin
-    fSource := aValue;
-  end;
-
-
-
-
-
-
-
-  procedure TAutoUpdate.UpdateAndTerminate(const aVersion: String);
+  procedure TAutoUpdate.UpdateAndTerminate;
   var
     i: Integer;
     params: String;
     orgFilename: String;
-    bak: String;
-    updatedFilename: String;
+    cmd: String;
   begin
-    Log.Info('Updating to version {version}', [aVersion]);
+    if NOT FileExists(TargetUpdate) then
+    begin
+      Log.Error('AutoUpdate: Update file {update} not found', [TargetUpdate]);
+      EXIT;
+    end;
+
+    if FileExists(TargetBackup) then
+    begin
+      Log.Debug('AutoUpdate: Deleting existing {backup}', [Path.Leaf(TargetBackup)]);
+      DeleteFileAndWait(TargetBackup);
+    end;
+
+    Log.Debug('AutoUpdate: Renaming {target} as {backup}', [Path.Leaf(Target), Path.Leaf(TargetBackup)]);
+    RenameFileAndWait(Target, TargetBackup);
+
+    Log.Debug('AutoUpdate: Renaming {update} as {target}', [Path.Leaf(TargetUpdate), Path.Leaf(Target)]);
+    RenameFileAndWait(TargetUpdate, Target);
 
     // Copy existing params (Param(1) thru Params(ParamCount)) to a quoted
     //  string which we can pass on the command line to the autoUpdate phases
@@ -281,17 +382,10 @@ implementation
     if Length(params) > 1 then
       SetLength(params, Length(params) - 1);
 
-    orgFilename     := ExtractFilename(ParamStr(0));
-    bak             := orgFilename + '.bak';
-    updatedFilename := ChangeFileExt(orgFilename, '-' + aVersion + '.exe');
+    cmd := Str.Concat([orgFilename, params, OPT_Cleanup, IntToStr(GetCurrentProcessId)], ' ');
 
-    Log.Debug('AutoUpdate: Renaming {target} as {bak}', [orgFilename, bak]);
-    RenameFile(orgFilename, bak);
-
-    Log.Debug('AutoUpdate: Renaming {updated} as {target}', [updatedFilename, orgFilename]);
-    RenameFile(updatedFilename, orgFilename);
-
-    Exec(Str.Concat([orgFilename, params, OPT_Cleanup, IntToStr(GetCurrentProcessId)], ' '), FALSE);
+    Log.Debug('AutoUpdate: Relaunching updated application with command line {cmd}', [cmd]);
+    Exec(cmd, FALSE);
 
     raise EAutoUpdatePhaseComplete.Create;
   end;
@@ -299,7 +393,6 @@ implementation
 
 
   function TAutoUpdate.UpdateAvailable(const aCurrentVersion: ISemVer;
-                                       const aForceLatest: Boolean;
                                        var aVersion: String): Boolean;
   var
     i: Integer;
@@ -308,11 +401,21 @@ implementation
     available: IStringList;
     ver: ISemVer;
     latest: ISemVer;
+    forceUpdate: Boolean;
   begin
+    forceUpdate := FALSE;
+
+    for i := 1 to ParamCount do
+    begin
+      forceUpdate := Str.SameText(ParamStr(i), OPT_Force);
+      if forceUpdate then
+        BREAK;
+    end;
+
     result    := FALSE;
     aVersion  := '';
 
-    filenameStem  := ChangeFileExt(ExtractFilename(ParamStr(0)), '-');
+    filenameStem := ChangeFileExt(ExtractFilename(ParamStr(0)), '-');
 
     if NOT FileSearch.Filename(filenameStem + '*.exe')
             .Folder(Source)
@@ -330,13 +433,15 @@ implementation
         latest := ver;
     end;
 
-    result := Assigned(latest) and (aForceLatest or latest.IsNewerThan(aCurrentVersion));
+    result := Assigned(latest) and (forceUpdate or latest.IsNewerThan(aCurrentVersion));
 
     if result then
-      aVersion := latest.AsString;
+      aVersion := latest.AsString
+    else if Assigned(latest) then
+      Log.Debug('AutoUpdate: No update required (already up-to-date)')
+    else
+      Log.Debug('AutoUpdate: No updates found');
   end;
-
-
 
 
 
@@ -344,10 +449,11 @@ implementation
   begin
     Log.Debug('AutoUpdate: Checking for availability of {version}', [aVersion]);
 
-    if Download(aVersion) then
-      UpdateAndTerminate(aVersion);
+    Download(aVersion);
 
-    Log.Error('AutoUpdate: Version {version} cannot be found', [aVersion]);
+    Log.Info('Updating to version {version}', [aVersion]);
+
+    UpdateAndTerminate;
 
     raise EAutoUpdatePhaseComplete.Create;
   end;
@@ -359,7 +465,11 @@ implementation
   constructor EAutoUpdatePhaseComplete.Create;
   begin
     inherited Create('AutoUpdate phase complete');
+
+    Log.Debug('AutoUpdate: Phase complete');
   end;
+
+
 
 
 
@@ -368,12 +478,18 @@ implementation
   class procedure AutoUpdate.CheckSource(const aSource: String;
                                          const aForceLatest: Boolean);
   var
-    updater: IAutoUpdate;
+    updater: TAutoUpdate;
   begin
     updater := TAutoUpdate.Create;
-    updater.Source := aSource;
-    updater.CheckForUpdate(aForceLatest);
+    try
+      updater.Source := aSource;
+      updater.Execute;
+
+    finally
+      updater.Free;
+    end;
   end;
+
 
 
 
